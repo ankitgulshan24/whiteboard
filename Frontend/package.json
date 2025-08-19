@@ -7,6 +7,7 @@
     "@testing-library/react": "^13.4.0",
     "@testing-library/user-event": "^13.5.0",
     "classnames": "^2.3.2",
+    "lucide-react": "^0.540.0",
     "perfect-freehand": "^1.2.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
@@ -43,5 +44,9 @@
   },
   "devDependencies": {
     "tailwindcss": "^3.3.6"
-  }
+  },
+  "description": "This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).",
+  "main": "tailwind.config.js",
+  "author": "",
+  "license": "ISC"
 }
