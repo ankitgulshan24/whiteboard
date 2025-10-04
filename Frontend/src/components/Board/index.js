@@ -1,20 +1,26 @@
-import { useContext, useEffect, useRef, useCallback } from "react";
+import { useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import rough from "roughjs";
 import boardContext from "../../store/board-context";
 import { TOOL_ACTION_TYPES, TOOL_ITEMS } from "../../constants";
 import toolboxContext from "../../store/toolbox-context";
-import { useWebSocket } from "../../hooks/useWebSocket";
-import classes from "./index.module.css";
-import { updateCanvas } from "../../utils/api";
-import { getSvgPathFromStroke } from "../../utils/element";
-import getStroke from "perfect-freehand";
+import socket from "../../utils/socket";
 
-function Board() {
+import classes from "./index.module.css";
+
+import {
+  getSvgPathFromStroke,
+} from "../../utils/element";
+import getStroke from "perfect-freehand";
+import axios from "axios";
+
+
+function Board({ id }) {
   const canvasRef = useRef();
   const textAreaRef = useRef();
+  console.log(id)
+
   const {
     elements,
-    setElements,
     toolActionType,
     boardMouseDownHandler,
     boardMouseMoveHandler,
@@ -22,28 +28,64 @@ function Board() {
     textAreaBlurHandler,
     undo,
     redo,
+    setCanvasId,
+    setElements,
+    setHistory
   } = useContext(boardContext);
   const { toolboxState } = useContext(toolboxContext);
 
-  const canvasId = window.location.pathname.split('/').pop();
-  
-  // Process incoming canvas updates
-  const handleCanvasUpdate = useCallback((updatedElements) => {
-    const processedElements = updatedElements.map(element => {
-      if (element.type === TOOL_ITEMS.BRUSH) {
-        const pathData = getSvgPathFromStroke(getStroke(element.points));
-        return {
-          ...element,
-          path: new Path2D(pathData)
-        };
-      }
-      return element;
-    });
-    setElements(processedElements);
-  }, [setElements]);
+  const token = localStorage.getItem("whiteboard_user_token");
 
-  // Initialize WebSocket connection
-  const { emitCanvasUpdate } = useWebSocket(canvasId, handleCanvasUpdate);
+  const [isAuthorized, setIsAuthorized] = useState(true);
+
+  useEffect(() => {
+    if (id) {
+      // Join the canvas room (no need for userId)
+      socket.emit("joinCanvas", { canvasId: id });
+
+      // Listen for updates from other users
+      socket.on("receiveDrawingUpdate", (updatedElements) => {
+        setElements(updatedElements);
+      });
+
+      // Load initial canvas data
+      socket.on("loadCanvas", (initialElements) => {
+        setElements(initialElements);
+      });
+
+      socket.on("unauthorized", (data) => {
+        console.log(data.message);
+        alert("Access Denied: You cannot edit this canvas.");
+        setIsAuthorized(false);
+      });
+
+      return () => {
+        socket.off("receiveDrawingUpdate");
+        socket.off("loadCanvas");
+        socket.off("unauthorized");
+      };
+    }
+  }, [id]);
+
+  useEffect(() => {
+    const fetchCanvasData = async () => {
+      if (id && token) {
+        try {
+          const response = await axios.get(`${process.env.REACT_APP_API_BASE_URL}/canvas/load/${id}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          setCanvasId(id); // Set the current canvas ID
+          setElements(response.data.elements); // Set the fetched elements
+          setHistory(response.data.elements); // Set the fetched elements
+        } catch (error) {
+          console.error("Error loading canvas:", error);
+        } finally {
+        }
+      }
+    };
+
+    fetchCanvasData();
+  }, [id, token]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -61,12 +103,13 @@ function Board() {
     }
 
     document.addEventListener("keydown", handleKeyDown);
+
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, [undo, redo]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const canvas = canvasRef.current;
     const context = canvas.getContext("2d");
     context.save();
@@ -83,8 +126,8 @@ function Board() {
           break;
         case TOOL_ITEMS.BRUSH:
           context.fillStyle = element.stroke;
-          const brushPath = element.path || new Path2D(getSvgPathFromStroke(getStroke(element.points)));
-          context.fill(brushPath);
+          const path = new Path2D(getSvgPathFromStroke(getStroke(element.points)));
+          context.fill(path);
           context.restore();
           break;
         case TOOL_ITEMS.TEXT:
@@ -104,6 +147,7 @@ function Board() {
     };
   }, [elements]);
 
+
   useEffect(() => {
     const textarea = textAreaRef.current;
     if (toolActionType === TOOL_ACTION_TYPES.WRITING) {
@@ -113,28 +157,24 @@ function Board() {
     }
   }, [toolActionType]);
 
+  // console.log("Elements ",elements);
+
   const handleMouseDown = (event) => {
+    if (!isAuthorized) return;
     boardMouseDownHandler(event, toolboxState);
   };
 
   const handleMouseMove = (event) => {
+    if (!isAuthorized) return;
     boardMouseMoveHandler(event);
+    socket.emit("drawingUpdate", { canvasId: id, elements });
   };
 
-  const handleMouseUp = useCallback(() => {
+  const handleMouseUp = () => {
+    if (!isAuthorized) return;
     boardMouseUpHandler();
-    
-    const serializableElements = elements.map(element => {
-      if (element.type === TOOL_ITEMS.BRUSH) {
-        const { path, ...rest } = element;
-        return rest;
-      }
-      return element;
-    });
-    
-    updateCanvas(canvasId, serializableElements);
-    emitCanvasUpdate(serializableElements);
-  }, [boardMouseUpHandler, canvasId, elements, emitCanvasUpdate]);
+    socket.emit("drawingUpdate", { canvasId: id, elements });
+  };
 
   return (
     <>

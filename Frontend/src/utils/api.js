@@ -1,46 +1,38 @@
+// utils/api.js
+import axios from "axios";
 
-const URL='https://whiteboard-ftu8.onrender.com';
-const token=localStorage.getItem('token');
+const API_BASE_URL = `${process.env.REACT_APP_API_BASE_URL}/canvas`;
 
-export const updateCanvas=async(id,elements)=>{
-    try{
-       if(!token){
-           throw new Error('Unauthorized');
-        }
-        const response=await fetch(`${URL}/canvas/update/${id}`,{
-            method:'PUT',
-            headers:{
-                Authorization:`Bearer ${token}`,
-                'Content-Type':'application/json'
-            },
-            body:JSON.stringify(elements)
-        });
-        const data=await response.json();
-        if(!response.ok){
-            throw new Error(data.message||'Failed to update canvas');
-        }
-        return data;
-    }catch(error){
-        throw error;
-    }
-}
+const token = localStorage.getItem('whiteboard_user_token')
+const canvasId = localStorage.getItem('canvas_id')
 
-export const fetchCanvas = async (id) => {
-    try {
-      const response = await fetch(`${URL}/canvas/load/${id}`, {
-        method: "GET",
+export const updateCanvas = async (canvasId, elements) => {
+  try {
+    const response = await axios.put(
+      `${API_BASE_URL}/update`,
+      { canvasId, elements },
+      {
         headers: {
-          Authorization: `Bearer ${token}`,
+          Authorization: token,
         },
-      });
-  
-      if (!response.ok) {
-        throw new Error("Failed to fetch canvas data");
       }
-  
-      return await response.json();
-    } catch (error) {
-      console.error("Error fetching canvas:", error);
-      throw error;
-    }
+    );
+    console.log("Canvas updated successfully in the database!", response.data);
+    return response.data;
+  } catch (error) {
+    // console.error("Error updating canvas:", error);
+  }
+};
+
+export const fetchInitialCanvasElements = async (canvasId) => {
+  try {
+    const response = await axios.get(`${API_BASE_URL}/load/${canvasId}`, {
+      headers: {
+        Authorization: token,
+      },
+    });
+    return response.data.elements;
+  } catch (error) {
+    console.error("Error fetching initial canvas elements:", error);
+  }
 };
